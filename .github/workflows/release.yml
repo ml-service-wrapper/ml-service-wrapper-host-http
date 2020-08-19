@@ -1,0 +1,64 @@
+# This workflows will upload a Python Package using Twine when a release is created
+# For more information see: https://help.github.com/en/actions/language-and-framework-guides/using-python-with-github-actions#publishing-to-package-registries
+
+name: Create Release
+
+on:
+  push:
+    tags: 
+      - v*
+
+jobs:
+  deploy:
+
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v2
+    - name: Set up Python
+      uses: actions/setup-python@v2
+      with:
+        python-version: '3.x'
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install setuptools wheel twine
+
+    - id: dist
+      name: Build
+      env:
+        USE_SCM_VERSION: true
+        TWINE_USERNAME: ${{ secrets.PYPI_USERNAME }}
+        TWINE_PASSWORD: ${{ secrets.PYPI_PASSWORD }}
+      run: |
+        python ./src/setup.py sdist bdist_wheel
+        
+        twine upload ./dist/*
+
+        distPath=`realpath ./dist`
+
+        mostRecentTarball=`ls -Art "$distPath" | grep -G ".*\.tar\.gz" | tail -n 1`
+        echo "::set-output name=dist_tarball_name::$mostRecentTarball"
+        echo "::set-output name=dist_path::${distPath}"
+        
+    - name: Create Release
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }} # This token is provided by Actions, you do not need to create your own token
+      with:
+        tag_name: ${{ github.ref }}
+        release_name: Release ${{ github.ref }}
+        draft: false
+        prerelease: false
+
+    - name: Upload Release Asset
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps 
+        asset_path: ${{ steps.dist.outputs.dist_path }}/${{ steps.dist.outputs.dist_tarball_name }}
+        asset_name: ${{ steps.dist.outputs.dist_tarball_name }}
+        asset_content_type: application/gzip
