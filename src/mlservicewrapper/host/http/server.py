@@ -65,40 +65,6 @@ _is_ready = False
 _status_message = "Loading..."
 _service: mlservicewrapper.core.services.Service = None
 
-async def _process_batch(request: Request) -> Response:
-    content_type = "application/json"
-    # request.headers.get("Content-Type", "application/json")
-
-    if content_type.lower() == "application/json":
-        req_dict = await request.json()
-
-        req_ctx = _HttpJsonProcessContext(req_dict.get("parameters", dict()), req_dict.get("inputs", dict()))
-    else:
-        return _error_response(405, "This endpoint does not accept {}!".format(content_type))
-
-    if not _is_ready:
-        return _error_response(503, "The model is still loading!")
-
-    try:
-        await _service.process(req_ctx)
-    except mlservicewrapper.core.errors.BadParameterError as err:
-        return _bad_request_response(err.message, "parameter", err.name)
-    except mlservicewrapper.core.errors.DatasetFieldError as err:
-        return _bad_request_response(err.message, "dataset", err.name, { "field": err.field_name })
-    except mlservicewrapper.core.errors.BadDatasetError as err:
-        return _bad_request_response(err.message, "dataset", err.name)
-    except mlservicewrapper.core.errors.BadRequestError as err:
-        return _bad_request_response(err.message)
-
-    outputs_dict = dict(((k, v.to_dict("records")) for k, v in req_ctx.output_dataframes()))
-    
-    return JSONResponse({
-        "outputs": outputs_dict
-    })
-
-def _get_status(request: Request):
-    
-    return JSONResponse({"status": _status_message, "ready": _is_ready}, 200)
 
 def _on_stopping():
     if not _is_ready and hasattr(_service, 'dispose'):
@@ -145,12 +111,52 @@ def _begin_loading():
 
     print("Done begin_loading")
 
-_routes = [
-    Route("/api/process/batch", endpoint=_process_batch, methods=["POST"]),
-    Route("/api/status", endpoint=_get_status, methods=["GET"])
-]
+app = Starlette(debug=True, on_startup=[_begin_loading], on_shutdown=[_on_stopping])
 
-app = Starlette(debug=True, routes=_routes, on_startup=[_begin_loading], on_shutdown=[_on_stopping])
+app.on_event("")
+
+@app.route("/api/process/batch", methods=["POST"])
+async def _process_batch(request: Request) -> Response:
+    content_type = "application/json"
+    # request.headers.get("Content-Type", "application/json")
+
+    if content_type.lower() == "application/json":
+        req_dict = await request.json()
+
+        req_ctx = _HttpJsonProcessContext(req_dict.get("parameters", dict()), req_dict.get("inputs", dict()))
+
+        req_ctx.log_verbose("parsed request body...")
+    else:
+        return _error_response(405, "This endpoint does not accept {}!".format(content_type))
+
+    if not _is_ready:
+        return _error_response(503, "The model is still loading!")
+
+    try:
+        await _service.process(req_ctx)
+    except mlservicewrapper.core.errors.BadParameterError as err:
+        return _bad_request_response(err.message, "parameter", err.name)
+    except mlservicewrapper.core.errors.DatasetFieldError as err:
+        return _bad_request_response(err.message, "dataset", err.name, { "field": err.field_name })
+    except mlservicewrapper.core.errors.BadDatasetError as err:
+        return _bad_request_response(err.message, "dataset", err.name)
+    except mlservicewrapper.core.errors.BadRequestError as err:
+        return _bad_request_response(err.message)
+
+    outputs_dict = dict(((k, v.to_dict("records")) for k, v in req_ctx.output_dataframes()))
+
+    req_ctx.log_verbose("returning response...")
+
+    return JSONResponse({
+        "outputs": outputs_dict
+    })
+
+
+@app.route("/api/status", methods=["GET"])
+def _get_status(request: Request):
+    
+    return JSONResponse({"status": _status_message, "ready": _is_ready}, 200)
+
 
 # print("begin_loading")
 # api.begin_loading()
