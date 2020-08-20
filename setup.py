@@ -21,7 +21,7 @@ setup(
    author='Matthew Haugen',
    author_email='mhaugen@haugenapplications.com',
    
-   url="https://github.com/MaJaHa95/ml-service-wrapper-host-http",
+   url="https://github.com/ml-service-wrapper/ml-service-wrapper-host-http",
    long_description=long_description,
    long_description_content_type="text/markdown",
 
