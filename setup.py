@@ -31,7 +31,8 @@ setup(
    install_requires=[
       "mlservicewrapper-core",
       "starlette==0.13.7",
-      "uvicorn"
+      "uvicorn",
+      "gunicorn"
    ],
    setup_requires=['setuptools_scm'],
    zip_safe=False,
