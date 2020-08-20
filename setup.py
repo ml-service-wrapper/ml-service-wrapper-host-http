@@ -2,20 +2,12 @@ import os
 
 from setuptools import find_namespace_packages, setup
 
-if os.environ.get("USE_SCM_VERSION"):
-   use_scm_version = True
-   version = None
-else:
-   use_scm_version = False
-   version = "0.0.0"
-
 with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setup(
    name='mlservicewrapper-host-http',
-   version = version,
-   use_scm_version = use_scm_version,
+   use_scm_version = True,
    description='Host an mlservicewrapper service using HTTP',
    
    author='Matthew Haugen',
