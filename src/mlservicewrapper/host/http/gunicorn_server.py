@@ -20,9 +20,9 @@ class _StandaloneApplication(gunicorn.app.base.BaseApplication):
     def load(self):
         return self.application
 
-def run_with_gunicorn(host: str, port: int, workers: int = 2):
+def run_with_gunicorn(bind: str, workers: int = 2):
     options = {
-        'bind': '%s:%s' % (host, port),
+        'bind': bind,
         'workers': workers
     }
 

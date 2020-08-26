@@ -5,6 +5,7 @@ parser = argparse.ArgumentParser(description='Locally debug.', prog = "mlservice
 parser.add_argument('--config', help='Path to service configuration file', required=False)
 parser.add_argument('--host', help='Host to bind to', required=False, default="127.0.0.1")
 parser.add_argument('--port', help='Port to bind to', required=False, default=5000, type=int)
+parser.add_argument('--bind', required=False, default="127.0.0.1:5000")
 parser.add_argument('--workers', help='How many workers to deploy', required=False, default=2, type=int)
 
 parser.add_argument('--prod', help='Use production settings', action="store_true")
@@ -18,7 +19,16 @@ os.sys.path.insert(0, os.path.dirname(__file__))
 
 if args.prod:
     from .gunicorn_server import run_with_gunicorn
-    run_with_gunicorn(args.host, args.port, args.workers)
+    run_with_gunicorn(args.bind, args.workers)
 else:
     import uvicorn
-    uvicorn.run("server:app", host=args.host, port=args.port, log_level="trace")
+
+    bind_parts = args.bind.split(":")
+
+    if len(bind_parts) != 2:
+        parser.error("--bind must specify a host and port unless --prod is also included.")
+
+    host = bind_parts[0]
+    port = bind_parts[1]
+
+    uvicorn.run("server:app", host=host, port=port, log_level="trace")
