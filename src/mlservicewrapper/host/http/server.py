@@ -145,6 +145,6 @@ class _ApiInstance:
 
 _api = _ApiInstance()
 
-app = Starlette(debug=True, on_startup=[_api.begin_loading], on_shutdown=[_api.on_stopping])
+application = Starlette(debug=True, on_startup=[_api.begin_loading], on_shutdown=[_api.on_stopping])
 
-_api.decorate_app(app, "/api/")
+_api.decorate_app(application, "/api/")
