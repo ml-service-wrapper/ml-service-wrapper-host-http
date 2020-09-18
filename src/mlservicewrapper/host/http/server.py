@@ -56,40 +56,37 @@ class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessCo
 
 class _ApiInstance:
     def __init__(self):
+        self._service: mlservicewrapper.core.server.ServerInstance or None = None
         self._load_error = False
-        self._is_ready = False
         self._status_message = "Loading..."
-        self._service: mlservicewrapper.core.services.Service = None
+
+    def is_ready(self):
+        return self._service is not None and self._service.is_loaded()
 
     def on_stopping(self):
-        if not self._is_ready and hasattr(self._service, 'dispose'):
-            self._service.dispose()
+        if self._service is None:
+            return
         
-    async def _do_load_async(self):
-        try:
-            print("load")
-            service, config_parameters = mlservicewrapper.core.server.get_service_instance()
-
-            if hasattr(service, 'load'):
-                context = mlservicewrapper.core.contexts.EnvironmentVariableServiceContext("SERVICE_", config_parameters)
-
-                print("service.load")
-                await service.load(context)
-
-            self._service = service
-            self._is_ready = True
-            self._status_message = "Ready!"
-        except:
-            self._load_error = True
-            self._status_message = "Error during load!"
-            raise
-        finally:
-            print("done load")
+        self._service.dispose()
         
     def begin_loading(self):
+        async def _do_load_async():
+            try:
+                self._service = mlservicewrapper.core.server.ServerInstance()
+
+                print("load")
+                await self._service.load()
+
+                self._status_message = "Ready!"
+            except:
+                self._status_message = "Error during load!"
+                raise
+            finally:
+                print("done load")
+            
         def run():
             loop = asyncio.new_event_loop()
-            c = self._do_load_async()
+            c = _do_load_async()
             loop.run_until_complete(c)
 
         thr = threading.Thread(target=run)
@@ -111,7 +108,7 @@ class _ApiInstance:
         else:
             return _error_response(405, "This endpoint does not accept {}!".format(content_type))
 
-        if not self._is_ready:
+        if not self.is_ready():
             return _error_response(503, "The model is still loading!")
 
         try:
@@ -135,13 +132,15 @@ class _ApiInstance:
 
     def get_status(self, request: Request):
         
-        return JSONResponse({"status": self._status_message, "ready": self._is_ready}, 200)
+        return JSONResponse({
+            "status": self._status_message,
+            "ready": self.is_ready()
+        }, 200)
 
 
     def decorate_app(self, starlette_app: Starlette, route_prefix: str):
         starlette_app.add_route(route_prefix + "status", self.get_status, methods=["GET"])
         starlette_app.add_route(route_prefix + "process/batch", self.process_batch, methods=["POST"])
-
 
 _api = _ApiInstance()
 

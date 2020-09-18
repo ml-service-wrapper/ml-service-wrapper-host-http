@@ -14,4 +14,4 @@ if args.config:
 
 os.sys.path.insert(0, os.path.dirname(__file__))
 
-uvicorn.run("server:app", host=args.host, port=args.port, log_level="trace")
+uvicorn.run("server:application", host=args.host, port=args.port, log_level="trace")
