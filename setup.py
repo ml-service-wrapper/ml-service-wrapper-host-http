@@ -21,7 +21,7 @@ setup(
    packages=find_namespace_packages("src", include=['mlservicewrapper.*']),
 
    install_requires=[
-      "mlservicewrapper-core>=0.4.1,<0.5",
+      "mlservicewrapper-core>=0.5.0,<0.6",
       "starlette==0.13.7",
       "uvicorn",
       "gunicorn"

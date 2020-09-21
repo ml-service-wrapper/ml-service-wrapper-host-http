@@ -58,7 +58,7 @@ class _ObjectSchema:
         return schema
 
 class _SwaggerBuilder:
-    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Dict[str, mlservicewrapper.core.server.DatasetSpec]):
+    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Dict[str, dict]):
         
         datasets_schema = _ObjectSchema()
 
