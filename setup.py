@@ -24,7 +24,9 @@ setup(
       "mlservicewrapper-core>=0.5.0a0,<0.6",
       "starlette==0.13.7",
       "uvicorn",
-      "gunicorn"
+      "gunicorn",
+      "uvloop",
+      "httptools"
    ],
    setup_requires=['setuptools_scm'],
    zip_safe=False,
