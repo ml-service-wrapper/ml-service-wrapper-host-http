@@ -22,7 +22,7 @@ setup(
 
    install_requires=[
       "mlservicewrapper-core>=0.5.0a0,<0.6",
-      "starlette==0.13.7",
+      "starlette==0.14.0",
       "uvicorn",
       "gunicorn",
       "uvloop",
