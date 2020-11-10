@@ -1,5 +1,5 @@
 uvicorn
-starlette==0.13.7
+starlette==0.14.1
 uvicorn
 gunicorn
 mlservicewrapper-core
