@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import threading
 import typing
 
@@ -13,8 +14,6 @@ from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
-import logging
-
 
 def _error_response(status_code: int, message: str):
     return JSONResponse({"error": message}, status_code)
@@ -28,6 +27,7 @@ def _bad_request_response(message: str, input_type: str = None, name: str = None
         "details": message,
         "additionalInformation": additional_details
     }, 400)
+
 
 class _ObjectSchema:
     def __init__(self):
@@ -54,12 +54,13 @@ class _ObjectSchema:
 
         if self.has_required_properties():
             schema["required"] = self.__required
-        
+
         return schema
+
 
 class _SwaggerBuilder:
     def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Dict[str, dict]):
-        
+
         datasets_schema = _ObjectSchema()
 
         for name, spec in specs.items():
@@ -77,14 +78,15 @@ class _SwaggerBuilder:
         if not datasets_schema.has_properties():
             return False
 
-        to_schema.add_property(field, datasets_schema.to_dict(), datasets_schema.has_required_properties())
+        to_schema.add_property(field, datasets_schema.to_dict(
+        ), datasets_schema.has_required_properties())
 
         return True
 
     def _append_process_parameters_schema(self, to_schema: _ObjectSchema, service: mlservicewrapper.core.server.ServerInstance):
 
         process_parameters_schema = _ObjectSchema()
-        
+
         for name, spec in service.get_process_parameter_specs().items():
             process_parameters_schema.add_property(name, {
                 "type": spec["type"]
@@ -93,10 +95,11 @@ class _SwaggerBuilder:
         if not process_parameters_schema.has_properties():
             return False
 
-        to_schema.add_property("parameters", process_parameters_schema.to_dict(), process_parameters_schema.has_required_properties())
+        to_schema.add_property("parameters", process_parameters_schema.to_dict(
+        ), process_parameters_schema.has_required_properties())
 
         return True
-    
+
     def build(self, service: mlservicewrapper.core.server.ServerInstance):
 
         service_info = service.get_info() or dict()
@@ -107,11 +110,14 @@ class _SwaggerBuilder:
         }
 
         batch_process_request_schema = _ObjectSchema()
-        self._append_process_parameters_schema(batch_process_request_schema, service)
-        self._append_datasets(batch_process_request_schema, "input", "inputs", service.get_input_dataset_specs())
-        
+        self._append_process_parameters_schema(
+            batch_process_request_schema, service)
+        self._append_datasets(batch_process_request_schema,
+                              "input", "inputs", service.get_input_dataset_specs())
+
         batch_process_response_schema = _ObjectSchema()
-        self._append_datasets(batch_process_response_schema, "output", "outputs", service.get_output_dataset_specs())
+        self._append_datasets(batch_process_response_schema,
+                              "output", "outputs", service.get_output_dataset_specs())
 
         return{
             "swagger": "2.0",
@@ -302,16 +308,18 @@ class _ApiInstance:
         api_prefix = "/api/"
         starlette_app.add_route(api_prefix + "status",
                                 self.get_status, methods=["GET"])
-        starlette_app.add_route(
-            api_prefix + "process/batch", self.process_batch, methods=["POST"])
 
-        starlette_app.add_route(
-            "/swagger/v1/swagger.json", self.get_swagger, methods=["GET"])
+        starlette_app.add_route(api_prefix + "process/batch",
+                                self.process_batch, methods=["POST"])
+
+        starlette_app.add_route("/swagger/v1/swagger.json",
+                                self.get_swagger, methods=["GET"])
 
 
 _api = _ApiInstance()
 
-application = Starlette(debug=True, on_startup=[
-                        _api.begin_loading], on_shutdown=[_api.on_stopping])
+application = Starlette(debug=True,
+                        on_startup=[_api.begin_loading],
+                        on_shutdown=[_api.on_stopping])
 
 _api.decorate_app(application)
