@@ -1,5 +1,6 @@
-uvicorn
+
+mlservicewrapper-core>=0.6.0a0,<0.7
 starlette==0.13.7
 uvicorn
 gunicorn
-mlservicewrapper-core
+httptools

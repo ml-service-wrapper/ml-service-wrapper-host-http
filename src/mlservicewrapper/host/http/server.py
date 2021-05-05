@@ -59,27 +59,24 @@ class _ObjectSchema:
 
 
 class _SwaggerBuilder:
-    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Dict[str, dict]):
+    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Iterable[mlservicewrapper.core.configuration.DatasetSchema]):
 
         datasets_schema = _ObjectSchema()
 
-        for name, spec in specs.items():
-            item_schema = spec.get("itemSchema")
-
-            if item_schema is None:
+        for spec in specs:
+            if spec.item_schema is None:
                 continue
 
-            datasets_schema.add_property(name, {
+            datasets_schema.add_property(spec.name, {
                 "type": "array",
-                "title": f"{name} {direction} dataset",
-                "items": item_schema
-            }, spec.get("required", True))
+                "title": f"{spec.name} {direction} dataset",
+                "items": spec.item_schema
+            }, spec.required)
 
         if not datasets_schema.has_properties():
             return False
 
-        to_schema.add_property(field, datasets_schema.to_dict(
-        ), datasets_schema.has_required_properties())
+        to_schema.add_property(field, datasets_schema.to_dict(), datasets_schema.has_required_properties())
 
         return True
 
@@ -87,37 +84,33 @@ class _SwaggerBuilder:
 
         process_parameters_schema = _ObjectSchema()
 
-        for name, spec in service.get_process_parameter_specs().items():
-            process_parameters_schema.add_property(name, {
-                "type": spec["type"]
-            },  spec.get("required", True))
+        for spec in service.get_process_parameter_specs().items():
+            process_parameters_schema.add_property(spec.name, {
+                "type": spec.type
+            },  spec.required)
 
         if not process_parameters_schema.has_properties():
             return False
 
-        to_schema.add_property("parameters", process_parameters_schema.to_dict(
-        ), process_parameters_schema.has_required_properties())
+        to_schema.add_property("parameters", process_parameters_schema.to_dict(), process_parameters_schema.has_required_properties())
 
         return True
 
     def build(self, service: mlservicewrapper.core.server.ServerInstance):
 
-        service_info = service.get_info() or dict()
+        service_info = service.get_info()
 
         info = {
-            "title": service_info.get("name", "Hosted ML Service"),
-            "version": service_info.get("version", "0.0.1")
+            "title": service_info.name or "Hosted ML Service",
+            "version": service_info.version or "0.0.1"
         }
 
         batch_process_request_schema = _ObjectSchema()
-        self._append_process_parameters_schema(
-            batch_process_request_schema, service)
-        self._append_datasets(batch_process_request_schema,
-                              "input", "inputs", service.get_input_dataset_specs())
+        self._append_process_parameters_schema(batch_process_request_schema, service)
+        self._append_datasets(batch_process_request_schema, "input", "inputs", service.get_input_dataset_specs())
 
         batch_process_response_schema = _ObjectSchema()
-        self._append_datasets(batch_process_response_schema,
-                              "output", "outputs", service.get_output_dataset_specs())
+        self._append_datasets(batch_process_response_schema, "output", "outputs", service.get_output_dataset_specs())
 
         return{
             "swagger": "2.0",

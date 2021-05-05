@@ -1,9 +1,16 @@
 import os
+import platform
 
 from setuptools import find_namespace_packages, setup
 
-with open("README.md", "r") as fh:
+with open(os.path.join(os.path.dirname(__file__), "README.md"), "r") as fh:
     long_description = fh.read()
+
+with open(os.path.join(os.path.dirname(__file__), "requirements.txt"), "r") as fh:
+    install_requires = fh.read().split("\n")
+
+if platform.system() != "Windows":
+   install_requires.append("uvloop")
 
 setup(
    name='mlservicewrapper-host-http',
@@ -20,14 +27,7 @@ setup(
    package_dir={"": "src"},
    packages=find_namespace_packages("src", include=['mlservicewrapper.*']),
 
-   install_requires=[
-      "mlservicewrapper-core>=0.5.0a0,<0.6",
-      "starlette==0.13.7",
-      "uvicorn",
-      "gunicorn",
-      "uvloop",
-      "httptools"
-   ],
+   install_requires=install_requires,
    setup_requires=['setuptools_scm'],
    zip_safe=False,
    python_requires='>=3.6'
