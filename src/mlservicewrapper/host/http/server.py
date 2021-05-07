@@ -112,61 +112,39 @@ class _SwaggerBuilder:
         batch_process_response_schema = _ObjectSchema()
         self._append_datasets(batch_process_response_schema, "output", "outputs", service.get_output_dataset_specs())
 
-        ret = {
-            "swagger": "2.0",
-            "info": info,
-            "paths": {
-                "/api/status": {
-                    "get": {
-                        "tags": [
-                            "Service Health"
-                        ],
-                        "produces": ["application/json"],
-                        "responses": {
-                            "200": {
-                                "description": "Returns the status of the model",
-                                "schema": {
-                                    "type": "object",
-                                    "required": [
-                                        "status",
-                                        "ready"
-                                    ],
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "title": "Model Status",
-                                            "description": "A human-readable status message of the model load"
-                                        },
-                                        "ready": {
-                                            "type": "boolean",
-                                            "title": "Ready?",
-                                            "description": "An indicator of whether the service is ready to accept requests"
-                                        }
-                                    }
+        if not base_path:
+            base_path = "/"
+        elif not base_path.endswith("/"):
+            base_path = base_path + "/"
+
+        paths = dict()
+
+        paths[base_path + "api/status"] = {
+            "get": {
+                "tags": [
+                    "Service Health"
+                ],
+                "produces": ["application/json"],
+                "responses": {
+                    "200": {
+                        "description": "Returns the status of the model",
+                        "schema": {
+                            "type": "object",
+                            "required": [
+                                "status",
+                                "ready"
+                            ],
+                            "properties": {
+                                "status": {
+                                    "type": "string",
+                                    "title": "Model Status",
+                                    "description": "A human-readable status message of the model load"
+                                },
+                                "ready": {
+                                    "type": "boolean",
+                                    "title": "Ready?",
+                                    "description": "An indicator of whether the service is ready to accept requests"
                                 }
-                            }
-                        }
-                    }
-                },
-                "/api/process/batch": {
-                    "post": {
-                        "tags": [
-                            "Processing"
-                        ],
-                        "consumes": ["application/json"],
-                        "parameters": [
-                            {
-                                "name": "request",
-                                "in": "body",
-                                "required": True,
-                                "schema": batch_process_request_schema.to_dict()
-                            }
-                        ],
-                        "produces": ["application/json"],
-                        "responses": {
-                            "200": {
-                                "description": "Predicted results",
-                                "schema": batch_process_response_schema.to_dict()
                             }
                         }
                     }
@@ -174,8 +152,36 @@ class _SwaggerBuilder:
             }
         }
 
-        if base_path and base_path != "/":
-            ret["basePath"] = base_path
+        paths[base_path + "api/process/batch"] = {
+            "post": {
+                "tags": [
+                    "Processing"
+                ],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "body",
+                        "required": True,
+                        "schema": batch_process_request_schema.to_dict()
+                    }
+                ],
+                "produces": ["application/json"],
+                "responses": {
+                    "200": {
+                        "description": "Predicted results",
+                        "schema": batch_process_response_schema.to_dict()
+                    }
+                }
+            }
+        }
+
+        ret = {
+            "swagger": "2.0",
+            "info": info
+        }
+
+        ret["paths"] = paths
 
         return ret
 
