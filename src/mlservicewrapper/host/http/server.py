@@ -96,7 +96,7 @@ class _SwaggerBuilder:
 
         return True
 
-    def build(self, service: mlservicewrapper.core.server.ServerInstance):
+    def build(self, service: mlservicewrapper.core.server.ServerInstance, base_path: str = None):
 
         service_info = service.get_info()
 
@@ -112,7 +112,7 @@ class _SwaggerBuilder:
         batch_process_response_schema = _ObjectSchema()
         self._append_datasets(batch_process_response_schema, "output", "outputs", service.get_output_dataset_specs())
 
-        return{
+        ret = {
             "swagger": "2.0",
             "info": info,
             "paths": {
@@ -174,6 +174,11 @@ class _SwaggerBuilder:
             }
         }
 
+        if base_path and base_path != "/":
+            ret["basePath"] = base_path
+
+        return ret
+
 
 class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessContext):
     def __init__(self, parameters: dict, inputs: dict):
@@ -201,27 +206,45 @@ class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessCo
 
         return None
 
+def _get_url_path(*parts: typing.List[str]):
+    ret = ""
+
+    for part in parts:
+        if len(part) == 0:
+            continue
+        
+        if part[0] == "/":
+            part = part[1:]
+
+        ret = ret + "/" + part
+
+    return ret
 
 class _ApiInstance:
     def __init__(self):
-        self._service: mlservicewrapper.core.server.ServerInstance or None = None
+        self._service = mlservicewrapper.core.server.ServerInstance()
+        
+        http_config = self._service.get_host_config_section("http")
+
+        base_path = http_config.get("basePath", "/")
+
+        if not base_path.startswith("/"):
+            raise ValueError("basePath must begin with a leading slash!")
+
+        self._base_path = base_path[1:]
+        
         self._load_error = False
         self._status_message = "Loading..."
 
     def is_ready(self):
-        return self._service is not None and self._service.is_loaded()
+        return self._service.is_loaded()
 
     def on_stopping(self):
-        if self._service is None:
-            return
-
         self._service.dispose()
 
     def begin_loading(self):
         async def _do_load_async():
             try:
-                self._service = mlservicewrapper.core.server.ServerInstance()
-
                 print("load")
                 await self._service.load()
 
@@ -290,23 +313,15 @@ class _ApiInstance:
         }, 200)
 
     def get_swagger(self, request: Request):
-        if self._service is None:
-            return _error_response(503, "The service is not available!")
-
-        swagger = _SwaggerBuilder().build(self._service)
+        swagger = _SwaggerBuilder().build(self._service, base_path="/" + self._base_path)
 
         return JSONResponse(swagger, 200)
 
     def decorate_app(self, starlette_app: Starlette):
-        api_prefix = "/api/"
-        starlette_app.add_route(api_prefix + "status",
-                                self.get_status, methods=["GET"])
+        starlette_app.add_route(_get_url_path(self._base_path, "api", "status"), self.get_status, methods=["GET"])
+        starlette_app.add_route(_get_url_path(self._base_path, "api", "process", "batch"), self.process_batch, methods=["POST"])
 
-        starlette_app.add_route(api_prefix + "process/batch",
-                                self.process_batch, methods=["POST"])
-
-        starlette_app.add_route("/swagger/v1/swagger.json",
-                                self.get_swagger, methods=["GET"])
+        starlette_app.add_route(_get_url_path(self._base_path, "swagger", "v1", "swagger.json"), self.get_swagger, methods=["GET"])
 
 
 _api = _ApiInstance()
