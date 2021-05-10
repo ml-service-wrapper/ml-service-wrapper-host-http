@@ -3,13 +3,10 @@ import logging
 import threading
 import typing
 
-import mlservicewrapper
-import mlservicewrapper.core
-import mlservicewrapper.core.contexts
-import mlservicewrapper.core.errors
-import mlservicewrapper.core.server
-import mlservicewrapper.core.services
 import pandas as pd
+from mlservicewrapper.core import (configuration, context_sources, contexts,
+                                   errors, server, services)
+from pandas.core import base
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
@@ -59,7 +56,7 @@ class _ObjectSchema:
 
 
 class _SwaggerBuilder:
-    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Iterable[mlservicewrapper.core.configuration.DatasetSchema]):
+    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Iterable[configuration.DatasetSchema]):
 
         datasets_schema = _ObjectSchema()
 
@@ -80,7 +77,7 @@ class _SwaggerBuilder:
 
         return True
 
-    def _append_process_parameters_schema(self, to_schema: _ObjectSchema, service: mlservicewrapper.core.server.ServerInstance):
+    def _append_process_parameters_schema(self, to_schema: _ObjectSchema, service: server.ServerInstance):
 
         process_parameters_schema = _ObjectSchema()
 
@@ -96,7 +93,7 @@ class _SwaggerBuilder:
 
         return True
 
-    def build(self, service: mlservicewrapper.core.server.ServerInstance, base_path: str = None):
+    def build(self, service: server.ServerInstance, base_path: str = None):
 
         service_info = service.get_info()
 
@@ -186,20 +183,20 @@ class _SwaggerBuilder:
         return ret
 
 
-class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessContext):
+class _HttpJsonProcessContextSource(context_sources.CollectingProcessContextSource):
     def __init__(self, parameters: dict, inputs: dict):
         super().__init__()
         self.__parameters = parameters or dict()
         self.__inputs = inputs or dict()
 
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        mlservicewrapper.core.contexts.NameValidator.raise_if_invalid(name)
+        context_sources.NameValidator.raise_if_invalid(name)
 
         if name in self.__parameters:
             return self.__parameters[name]
 
         if required and default is None:
-            raise mlservicewrapper.core.errors.MissingParameterError(name)
+            raise errors.MissingParameterError(name)
 
         return default
 
@@ -208,36 +205,40 @@ class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessCo
             return pd.DataFrame.from_records(self.__inputs[name])
 
         if required:
-            raise mlservicewrapper.core.errors.MissingDatasetError(name)
+            raise errors.MissingDatasetError(name)
 
         return None
 
 def _get_url_path(*parts: typing.List[str]):
-    ret = ""
-
-    for part in parts:
-        if len(part) == 0:
-            continue
-        
-        if part[0] == "/":
+    def _trim(part: str):
+        if part.startswith("/"):
             part = part[1:]
 
-        ret = ret + "/" + part
+        if part.endswith("/"):
+            part = part[:-1]
 
-    return ret
+        return part
+
+    trimmed = (_trim(p) for p in parts)
+    with_len = (pt for pt in trimmed if len(pt) > 0)
+
+    return "/" + "/".join(with_len)
 
 class _ApiInstance:
     def __init__(self):
-        self._service = mlservicewrapper.core.server.ServerInstance()
+        self._service = server.ServerInstance("http")
         
-        http_config = self._service.get_host_config_section("http")
+        http_config = self._service.build_load_context()
 
-        base_path = http_config.get("basePath", "/")
+        base_path: str = http_config.get_parameter_value("BasePath", default="/")
 
         if not base_path.startswith("/"):
             raise ValueError("basePath must begin with a leading slash!")
 
-        self._base_path = base_path[1:]
+        print(f"Hosting with base path '{base_path}'")
+        http_config.logger.info("Hosting with base path: '%s'", base_path)
+
+        self._base_path = base_path
         
         self._load_error = False
         self._status_message = "Loading..."
@@ -277,14 +278,12 @@ class _ApiInstance:
         # request.headers.get("Content-Type", "application/json")
 
         if content_type.lower() == "application/json":
-            req_dict = await request.json()
+            req_dict: dict = await request.json()
 
             parameters = req_dict.get("parameters", dict())
             inputs = req_dict.get("inputs", dict())
 
-            req_ctx = _HttpJsonProcessContext(parameters, inputs)
-
-            logging.debug("parsed request body...")
+            req_ctx = _HttpJsonProcessContextSource(parameters, inputs)
         else:
             return _error_response(405, "This endpoint does not accept {}!".format(content_type))
 
@@ -293,13 +292,13 @@ class _ApiInstance:
 
         try:
             await self._service.process(req_ctx)
-        except mlservicewrapper.core.errors.BadParameterError as err:
+        except errors.BadParameterError as err:
             return _bad_request_response(err.message, "parameter", err.name)
-        except mlservicewrapper.core.errors.DatasetFieldError as err:
+        except errors.DatasetFieldError as err:
             return _bad_request_response(err.message, "dataset", err.name, {"field": err.field_name})
-        except mlservicewrapper.core.errors.BadDatasetError as err:
+        except errors.BadDatasetError as err:
             return _bad_request_response(err.message, "dataset", err.name)
-        except mlservicewrapper.core.errors.BadRequestError as err:
+        except errors.BadRequestError as err:
             return _bad_request_response(err.message)
 
         outputs_dict = dict(((k, v.to_dict("records"))
@@ -319,7 +318,7 @@ class _ApiInstance:
         }, 200)
 
     def get_swagger(self, request: Request):
-        swagger = _SwaggerBuilder().build(self._service, base_path="/" + self._base_path)
+        swagger = _SwaggerBuilder().build(self._service, base_path=self._base_path)
 
         return JSONResponse(swagger, 200)
 
