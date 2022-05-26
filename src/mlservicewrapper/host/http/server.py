@@ -1,19 +1,15 @@
 import asyncio
+import logging
 import threading
 import typing
 
-import mlservicewrapper
-import mlservicewrapper.core
-import mlservicewrapper.core.contexts
-import mlservicewrapper.core.errors
-import mlservicewrapper.core.server
-import mlservicewrapper.core.services
 import pandas as pd
+from mlservicewrapper.core import (configuration, context_sources, contexts,
+                                   errors, server, services)
+from pandas.core import base
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
-
-import logging
 
 
 def _error_response(status_code: int, message: str):
@@ -28,6 +24,7 @@ def _bad_request_response(message: str, input_type: str = None, name: str = None
         "details": message,
         "additionalInformation": additional_details
     }, 400)
+
 
 class _ObjectSchema:
     def __init__(self):
@@ -54,25 +51,24 @@ class _ObjectSchema:
 
         if self.has_required_properties():
             schema["required"] = self.__required
-        
+
         return schema
 
+
 class _SwaggerBuilder:
-    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Dict[str, dict]):
-        
+    def _append_datasets(self, to_schema: _ObjectSchema, direction: str, field: str, specs: typing.Iterable[configuration.DatasetSchema]):
+
         datasets_schema = _ObjectSchema()
 
-        for name, spec in specs.items():
-            item_schema = spec.get("itemSchema")
-
-            if item_schema is None:
+        for spec in specs:
+            if spec.item_schema is None:
                 continue
 
-            datasets_schema.add_property(name, {
+            datasets_schema.add_property(spec.name, {
                 "type": "array",
-                "title": f"{name} {direction} dataset",
-                "items": item_schema
-            }, spec.get("required", True))
+                "title": f"{spec.name} {direction} dataset",
+                "items": spec.item_schema
+            }, spec.required)
 
         if not datasets_schema.has_properties():
             return False
@@ -81,14 +77,14 @@ class _SwaggerBuilder:
 
         return True
 
-    def _append_process_parameters_schema(self, to_schema: _ObjectSchema, service: mlservicewrapper.core.server.ServerInstance):
+    def _append_process_parameters_schema(self, to_schema: _ObjectSchema, service: server.ServerInstance):
 
         process_parameters_schema = _ObjectSchema()
-        
-        for name, spec in service.get_process_parameter_specs().items():
-            process_parameters_schema.add_property(name, {
-                "type": spec["type"]
-            },  spec.get("required", True))
+
+        for spec in service.get_process_parameter_specs().items():
+            process_parameters_schema.add_property(spec.name, {
+                "type": spec.type
+            },  spec.required)
 
         if not process_parameters_schema.has_properties():
             return False
@@ -96,78 +92,56 @@ class _SwaggerBuilder:
         to_schema.add_property("parameters", process_parameters_schema.to_dict(), process_parameters_schema.has_required_properties())
 
         return True
-    
-    def build(self, service: mlservicewrapper.core.server.ServerInstance):
 
-        service_info = service.get_info() or dict()
+    def build(self, service: server.ServerInstance, base_path: str = None):
+
+        service_info = service.get_info()
 
         info = {
-            "title": service_info.get("name", "Hosted ML Service"),
-            "version": service_info.get("version", "0.0.1")
+            "title": service_info.name or "Hosted ML Service",
+            "version": service_info.version or "0.0.1"
         }
 
         batch_process_request_schema = _ObjectSchema()
         self._append_process_parameters_schema(batch_process_request_schema, service)
         self._append_datasets(batch_process_request_schema, "input", "inputs", service.get_input_dataset_specs())
-        
+
         batch_process_response_schema = _ObjectSchema()
         self._append_datasets(batch_process_response_schema, "output", "outputs", service.get_output_dataset_specs())
 
-        return{
-            "swagger": "2.0",
-            "info": info,
-            "paths": {
-                "/api/status": {
-                    "get": {
-                        "tags": [
-                            "Service Health"
-                        ],
-                        "produces": ["application/json"],
-                        "responses": {
-                            "200": {
-                                "description": "Returns the status of the model",
-                                "schema": {
-                                    "type": "object",
-                                    "required": [
-                                        "status",
-                                        "ready"
-                                    ],
-                                    "properties": {
-                                        "status": {
-                                            "type": "string",
-                                            "title": "Model Status",
-                                            "description": "A human-readable status message of the model load"
-                                        },
-                                        "ready": {
-                                            "type": "boolean",
-                                            "title": "Ready?",
-                                            "description": "An indicator of whether the service is ready to accept requests"
-                                        }
-                                    }
+        if not base_path:
+            base_path = "/"
+        elif not base_path.endswith("/"):
+            base_path = base_path + "/"
+
+        paths = dict()
+
+        paths[base_path + "api/status"] = {
+            "get": {
+                "tags": [
+                    "Service Health"
+                ],
+                "produces": ["application/json"],
+                "responses": {
+                    "200": {
+                        "description": "Returns the status of the model",
+                        "schema": {
+                            "type": "object",
+                            "required": [
+                                "status",
+                                "ready"
+                            ],
+                            "properties": {
+                                "status": {
+                                    "type": "string",
+                                    "title": "Model Status",
+                                    "description": "A human-readable status message of the model load"
+                                },
+                                "ready": {
+                                    "type": "boolean",
+                                    "title": "Ready?",
+                                    "description": "An indicator of whether the service is ready to accept requests"
                                 }
-                            }
-                        }
-                    }
-                },
-                "/api/process/batch": {
-                    "post": {
-                        "tags": [
-                            "Processing"
-                        ],
-                        "consumes": ["application/json"],
-                        "parameters": [
-                            {
-                                "name": "request",
-                                "in": "body",
-                                "required": True,
-                                "schema": batch_process_request_schema.to_dict()
-                            }
-                        ],
-                        "produces": ["application/json"],
-                        "responses": {
-                            "200": {
-                                "description": "Predicted results",
-                                "schema": batch_process_response_schema.to_dict()
                             }
                         }
                     }
@@ -175,21 +149,54 @@ class _SwaggerBuilder:
             }
         }
 
+        paths[base_path + "api/process/batch"] = {
+            "post": {
+                "tags": [
+                    "Processing"
+                ],
+                "consumes": ["application/json"],
+                "parameters": [
+                    {
+                        "name": "request",
+                        "in": "body",
+                        "required": True,
+                        "schema": batch_process_request_schema.to_dict()
+                    }
+                ],
+                "produces": ["application/json"],
+                "responses": {
+                    "200": {
+                        "description": "Predicted results",
+                        "schema": batch_process_response_schema.to_dict()
+                    }
+                }
+            }
+        }
 
-class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessContext):
+        ret = {
+            "swagger": "2.0",
+            "info": info
+        }
+
+        ret["paths"] = paths
+
+        return ret
+
+
+class _HttpJsonProcessContextSource(context_sources.CollectingProcessContextSource):
     def __init__(self, parameters: dict, inputs: dict):
         super().__init__()
         self.__parameters = parameters or dict()
         self.__inputs = inputs or dict()
 
     def get_parameter_value(self, name: str, required: bool = True, default: str = None) -> str:
-        mlservicewrapper.core.contexts.NameValidator.raise_if_invalid(name)
+        context_sources.NameValidator.raise_if_invalid(name)
 
         if name in self.__parameters:
             return self.__parameters[name]
 
         if required and default is None:
-            raise mlservicewrapper.core.errors.MissingParameterError(name)
+            raise errors.MissingParameterError(name)
 
         return default
 
@@ -198,31 +205,53 @@ class _HttpJsonProcessContext(mlservicewrapper.core.contexts.CollectingProcessCo
             return pd.DataFrame.from_records(self.__inputs[name])
 
         if required:
-            raise mlservicewrapper.core.errors.MissingDatasetError(name)
+            raise errors.MissingDatasetError(name)
 
         return None
 
+def _get_url_path(*parts: typing.List[str]):
+    def _trim(part: str):
+        if part.startswith("/"):
+            part = part[1:]
+
+        if part.endswith("/"):
+            part = part[:-1]
+
+        return part
+
+    trimmed = (_trim(p) for p in parts)
+    with_len = (pt for pt in trimmed if len(pt) > 0)
+
+    return "/" + "/".join(with_len)
 
 class _ApiInstance:
     def __init__(self):
-        self._service: mlservicewrapper.core.server.ServerInstance or None = None
+        self._service = server.ServerInstance("http")
+        
+        http_config = self._service.build_load_context()
+
+        base_path: str = http_config.get_parameter_value("BasePath", default="/")
+
+        if not base_path.startswith("/"):
+            raise ValueError("basePath must begin with a leading slash!")
+
+        print(f"Hosting with base path '{base_path}'")
+        http_config.logger.info("Hosting with base path: '%s'", base_path)
+
+        self._base_path = base_path
+        
         self._load_error = False
         self._status_message = "Loading..."
 
     def is_ready(self):
-        return self._service is not None and self._service.is_loaded()
+        return self._service.is_loaded()
 
     def on_stopping(self):
-        if self._service is None:
-            return
-
         self._service.dispose()
 
     def begin_loading(self):
         async def _do_load_async():
             try:
-                self._service = mlservicewrapper.core.server.ServerInstance()
-
                 print("load")
                 await self._service.load()
 
@@ -249,14 +278,12 @@ class _ApiInstance:
         # request.headers.get("Content-Type", "application/json")
 
         if content_type.lower() == "application/json":
-            req_dict = await request.json()
+            req_dict: dict = await request.json()
 
             parameters = req_dict.get("parameters", dict())
             inputs = req_dict.get("inputs", dict())
 
-            req_ctx = _HttpJsonProcessContext(parameters, inputs)
-
-            logging.debug("parsed request body...")
+            req_ctx = _HttpJsonProcessContextSource(parameters, inputs)
         else:
             return _error_response(405, "This endpoint does not accept {}!".format(content_type))
 
@@ -265,13 +292,13 @@ class _ApiInstance:
 
         try:
             await self._service.process(req_ctx)
-        except mlservicewrapper.core.errors.BadParameterError as err:
+        except errors.BadParameterError as err:
             return _bad_request_response(err.message, "parameter", err.name)
-        except mlservicewrapper.core.errors.DatasetFieldError as err:
+        except errors.DatasetFieldError as err:
             return _bad_request_response(err.message, "dataset", err.name, {"field": err.field_name})
-        except mlservicewrapper.core.errors.BadDatasetError as err:
+        except errors.BadDatasetError as err:
             return _bad_request_response(err.message, "dataset", err.name)
-        except mlservicewrapper.core.errors.BadRequestError as err:
+        except errors.BadRequestError as err:
             return _bad_request_response(err.message)
 
         outputs_dict = dict(((k, v.to_dict("records"))
@@ -291,27 +318,21 @@ class _ApiInstance:
         }, 200)
 
     def get_swagger(self, request: Request):
-        if self._service is None:
-            return _error_response(503, "The service is not available!")
-
-        swagger = _SwaggerBuilder().build(self._service)
+        swagger = _SwaggerBuilder().build(self._service, base_path=self._base_path)
 
         return JSONResponse(swagger, 200)
 
     def decorate_app(self, starlette_app: Starlette):
-        api_prefix = "/api/"
-        starlette_app.add_route(api_prefix + "status",
-                                self.get_status, methods=["GET"])
-        starlette_app.add_route(
-            api_prefix + "process/batch", self.process_batch, methods=["POST"])
+        starlette_app.add_route(_get_url_path(self._base_path, "api", "status"), self.get_status, methods=["GET"])
+        starlette_app.add_route(_get_url_path(self._base_path, "api", "process", "batch"), self.process_batch, methods=["POST"])
 
-        starlette_app.add_route(
-            "/swagger/v1/swagger.json", self.get_swagger, methods=["GET"])
+        starlette_app.add_route(_get_url_path(self._base_path, "swagger", "v1", "swagger.json"), self.get_swagger, methods=["GET"])
 
 
 _api = _ApiInstance()
 
-application = Starlette(debug=True, on_startup=[
-                        _api.begin_loading], on_shutdown=[_api.on_stopping])
+application = Starlette(debug=True,
+                        on_startup=[_api.begin_loading],
+                        on_shutdown=[_api.on_stopping])
 
 _api.decorate_app(application)
