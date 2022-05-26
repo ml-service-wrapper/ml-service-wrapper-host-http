@@ -5,7 +5,7 @@ import typing
 
 import pandas as pd
 from mlservicewrapper.core import (configuration, context_sources, contexts,
-                                   errors, server, services)
+                                   errors, server)
 from pandas.core import base
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -231,6 +231,7 @@ class _ApiInstance:
         http_config = self._service.build_load_context()
 
         base_path: str = http_config.get_parameter_value("BasePath", default="/")
+        self.debug_mode: bool = http_config.get_parameter_value("Debugmode", default = False)
 
         if not base_path.startswith("/"):
             raise ValueError("basePath must begin with a leading slash!")
@@ -331,7 +332,7 @@ class _ApiInstance:
 
 _api = _ApiInstance()
 
-application = Starlette(debug=True,
+application = Starlette(debug=_api.debug_mode,
                         on_startup=[_api.begin_loading],
                         on_shutdown=[_api.on_stopping])
 
