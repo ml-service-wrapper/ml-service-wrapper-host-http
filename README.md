@@ -23,5 +23,5 @@ Use [gunicorn](https://docs.gunicorn.org/en/stable/deploy.html) to run in produc
 
 ```bash
 export SERVICE_CONFIG_PATH=/path/to/config.json
-gunicorn -w 4 -k uvicorn.workers.UvicornWorker mlservicewrapper.host.http
+gunicorn -w 4 -k uvicorn.workers.UvicornWorker mlservicewrapper.host.http.server
 ```
