@@ -1,5 +1,5 @@
 mlservicewrapper-core~=0.7
-starlette~=0.13
+starlette~=0.22
 uvicorn
 gunicorn
 httptools
